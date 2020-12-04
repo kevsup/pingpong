@@ -2,7 +2,9 @@ import RPi.GPIO as GPIO
 import threading
 import time
 import atexit
+from collections import deque
 from pingpong_constants import *
+
 
 GPIO.setmode(GPIO.BOARD)
 
@@ -80,7 +82,7 @@ def setup():
         if pin not in inputPins and pin not in PWM_PINS:
             GPIO.setup(PINS[pin], GPIO.OUT)
         elif pin not in PWM_PINS:
-            GPIO.setup(PINS[pin], GPIO.IN)
+            GPIO.setup(PINS[pin], GPIO.IN, pull_up_down = GPIO.PUD_UP)
     servo.start(DEG0)
     setupMotorDir()
 
@@ -109,6 +111,90 @@ def finiteStateMachine():
 
 
 setup()
-finiteStateMachine()
+#finiteStateMachine()
+
+servo.ChangeDutyCycle(0)
+
+prevA = GPIO.input(PINS['ENCODER_A'])
+prevB = GPIO.input(PINS['ENCODER_B'])
+encoderTicks = 0
+thetaMotor = encoderTicks * RADS_PER_TICK
+prevThetaMotor = 0
+thetaMotorQ = deque()
+omegaMotor = 0
+omegaMotorQ = deque()
+for i in range(LEN_MOVING_AVERAGE):
+    thetaMotorQ.append(thetaMotor)
+    omegaMotorQ.append(omegaMotor)
+prevTime = time.time()
+
+def getQueueAvg(queue):
+    return 1.0 * sum(queue) / len(queue)
+
+def updateMovingQueue(queue, val):
+    queue.popleft()
+    queue.append(val)
+
+def checkEncoder(encoder):
+    currA = GPIO.input(PINS['ENCODER_A'])
+    currB = GPIO.input(PINS['ENCODER_B'])
+    global prevA
+    global prevB
+    global encoderTicks
+    global thetaMotor
+    global prevThetaMotor
+    global prevTime
+    global encoder0vel
+    if (encoder=='A' and currA==prevA) or \
+            (encoder=='B' and currB==prevB):
+        return False
+    if currA == currB:
+        if encoder == 'A':
+            encoderTicks = encoderTicks + 1
+        else:
+            encoderTicks = encoderTicks - 1
+    else:
+        if encoder == 'A':
+            encoderTicks = encoderTicks - 1
+        else:
+            encoderTicks = encoderTicks + 1
+    prevA = currA
+    prevB = currB
+    currTime = time.time()
+    elapsedTime = currTime - prevTime
+    prevTime = currTime
+    prevThetaMotor = thetaMotor
+    thetaMotor = encoderTicks * RADS_PER_TICK
+    omegaMotor = (thetaMotor - prevThetaMotor) / elapsedTime
+    updateMovingQueue(thetaMotorQ, thetaMotor)
+    updateMovingQueue(omegaMotorQ, omegaMotor)
+    print('theta = ' + str(getQueueAvg(thetaMotorQ)) + \
+           ', omega = ' + str(getQueueAvg(omegaMotorQ)))
+    return True
+
+
+thetaDes = 0.5
+thetaMotorDes = thetaDes * THETADES_TO_THETAMOTOR
+print('desired pos = ' + str(thetaMotorDes))
+
+def feedbackControl():
+    voltage = kp * (thetaMotorDes - getQueueAvg(thetaMotorQ)) + \
+            kd * getQueueAvg(omegaMotorQ)
+    if voltage > MAX_VOLTAGE:
+        voltage = MAX_VOLTAGE
+    elif voltage < -MAX_VOLTAGE:
+        voltage = -MAX_VOLTAGE
+    dutyCycle = 100.0 * abs(voltage) / MAX_VOLTAGE
+    # add more stuff later
+
+
+try:
+    while True:
+        if not checkEncoder('A'):
+            checkEncoder('B')
+
+except KeyboardInterrupt:
+    print('keyboard exit detected')
+
 atexit.register(GPIO.cleanup)
 

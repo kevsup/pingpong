@@ -35,3 +35,26 @@ PWM_PINS = ['SERVO', 'MB_PWM', 'MT_PWM', 'GEAR_PWM']
 SERVO_PWM_FREQ = 50  # 50Hz, or 20ms pulse cycle from spec sheet
 PWM_FREQ = 1000 # for non servo pwm
 
+
+# encoder
+TICKS_PER_REV = 48
+RADS_PER_TICK = 1.0 / TICKS_PER_REV * 6.28
+LEN_MOVING_AVERAGE = 3
+
+# motor constant (guesstimating)
+k_motor = 0.01  # Volts * s / rad
+R_motor = 22    # Ohms
+
+# robot params (derived on paper)
+# rotation moment of inertia (approximate as rectangular prism)
+Izz = (1.0 / 12) * 3 * (0.09**2 + 0.21**2)  # kg * m^2
+d = 0.09    # m
+D = 0.03    # m
+GEAR_RATIO = 100
+THETADES_TO_THETAMOTOR = GEAR_RATIO * d / D
+MAX_VOLTAGE = 8     # after accounting for loss in L298N driver
+
+# feedback control, found via root locus guess/check
+kp = 100
+kd = 0.04
+
