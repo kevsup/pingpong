@@ -32,7 +32,7 @@ SPINS['TOPSPIN'] = 0
 SPINS['BACKSPIN'] = 1
 
 # set pwm duty cycle for different spins
-BACKSPIN_PWM = {'top':30, 'bottom':50}
+BACKSPIN_PWM = {'top':10, 'bottom':25}
 TOPSPIN_PWM = {'top':50, 'bottom':30}
 
 # set sweep direction
@@ -60,7 +60,7 @@ d = 0.09    # m
 D = 0.03    # m
 GEAR_RATIO = 100
 THETADES_TO_THETAMOTOR = GEAR_RATIO * d / D
-THETADES = {'FOREHAND':0.5, 'BACKHAND':-0.5}
+THETADES = {'FOREHAND':0.3, 'BACKHAND':-0.3}
 MAX_VOLTAGE = 8     # after accounting for loss in L298N driver
 
 # feedback control, found via root locus and guess/check

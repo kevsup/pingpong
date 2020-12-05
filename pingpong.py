@@ -5,19 +5,33 @@ import atexit
 from collections import deque
 from pingpong_constants import *
 
-
 GPIO.setmode(GPIO.BOARD)
+mutex = threading.Lock()
 
-t0 = time.time()
+# shared global variables
+mutex.acquire()
 shootingTime = 3000 # milliseconds
-
-state = STATES['WAIT_FOR_USER']
-shootingState = STATES['FEED']
 shootingSequence = DEFAULT_SEQUENCE
 sequencePtr = 0
-nextShot = shootingSequence[sequencePtr]
-
 spin = SPINS['BACKSPIN']
+running = False
+terminate = False
+mutex.release()
+
+# robot-specific global variables
+t0 = time.time()
+state = STATES['SWEEP']
+shootingState = STATES['FEED']
+nextShot = shootingSequence[sequencePtr]
+prevA = True
+prevB = True
+encoderTicks = 0
+thetaMotor = encoderTicks * RADS_PER_TICK
+thetaMotorQ = deque()
+omegaMotorQ = deque()
+prevTime = time.time()
+thetaDes = 0
+reachedDes = False
 
 # set up PWM pins
 GPIO.setup(PINS['SERVO'], GPIO.OUT) 
@@ -36,16 +50,36 @@ GPIO.setup(PINS['GEAR_PWM'], GPIO.OUT)
 gearMotor = GPIO.PWM(PINS['GEAR_PWM'], PWM_FREQ)
 gearMotor.start(0)
 
-prevA = True
-prevB = True
-encoderTicks = 0
-thetaMotor = encoderTicks * RADS_PER_TICK
-thetaMotorQ = deque()
-omegaMotorQ = deque()
-prevTime = time.time()
+def setRunning(newBool):
+    global running
+    mutex.acquire()
+    running = newBool
+    mutex.release()
 
-thetaDes = 0
-reachedDes = False
+def setShootingSequence(newSequence):
+    global shootingSequence
+    mutex.acquire()
+    shootingSequence = newSequence
+    sequencePtr = 0
+    mutex.release()
+
+def setSpin(newSpin):
+    global spin
+    mutex.acquire()
+    spin = newSpin
+    mutex.release()
+
+def setShootingTime(newTime):
+    global shootingTime
+    mutex.acquire()
+    shootingTime = newTime
+    mutex.release()
+
+def shutdown():
+    global terminate
+    mutex.acquire()
+    terminate = True
+    mutex.release()
 
 def setupMotorDir():
     GPIO.output(PINS['MB_DIR_A'], GPIO.LOW)
@@ -54,7 +88,10 @@ def setupMotorDir():
     GPIO.output(PINS['MT_DIR_B'], GPIO.LOW)
 
 def updateSpin():
-    if spin == SPINS['TOPSPIN']:
+    mutex.acquire()
+    currSpin = spin
+    mutex.release()
+    if currSpin == SPINS['TOPSPIN']:
         bottomMotor.ChangeDutyCycle(TOPSPIN_PWM['bottom'])
         topMotor.ChangeDutyCycle(TOPSPIN_PWM['top'])
     else:
@@ -93,17 +130,26 @@ def shoot():
         t0 = time.time()
     elif shootingState == STATES['WAIT']:
         currTime = (int)(1000 * (time.time() - t0))
-        if currTime > shootingTime:
+
+        mutex.acquire()
+        currShootingTime = shootingTime
+        mutex.release()
+
+        if currTime > currShootingTime:
             shootingState = STATES['FEED']
             updateSpin()
+
+            mutex.acquire()
             sequencePtr = sequencePtr + 1
             if sequencePtr >= len(shootingSequence):
                 sequencePtr = 0
             nextShot = shootingSequence[sequencePtr]
+            mutex.release()
+
             printState(nextShot)
             if nextShot != state:
                 setStateToSweep()
-        elif currTime > shootingTime / 2:
+        elif currTime > currShootingTime / 2:
             servo.ChangeDutyCycle(DEG0)
     else:
         print('yo shooting state cannot be stateless!')
@@ -211,22 +257,32 @@ def finiteStateMachine():
     global nextShot
     try:
         while True:
-            if state == STATES['SWEEP']:
-                if sweep():
-                    # done sweeping, go to shooting
-                    state = nextShot
-                    updateSpin()
-                    printState(state)
-            elif state == STATES['FOREHAND'] or state == STATES['BACKHAND']:
-                shoot()
-            elif state != STATES['WAIT_FOR_USER']:
-                print('yo main state cannot be stateless!')
+            
+            mutex.acquire()
+            run = running
+            mutex.release()
+
+            if run:
+                if state == STATES['SWEEP']:
+                    if sweep():
+                        # done sweeping, go to shooting
+                        state = nextShot
+                        updateSpin()
+                        printState(state)
+                elif state == STATES['FOREHAND'] or state == STATES['BACKHAND']:
+                    shoot()
+                elif state != STATES['WAIT_FOR_USER']:
+                    print('yo main state cannot be stateless!')
+
+            mutex.acquire()
+            stopping = terminate
+            mutex.release()
+
+            if stopping:
+                break
     except KeyboardInterrupt:
         print('keyboard exit detected')
+    
+    GPIO.cleanup()
 
-
-
-setup()
-finiteStateMachine()
-atexit.register(GPIO.cleanup)
 
