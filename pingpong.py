@@ -12,8 +12,10 @@ t0 = time.time()
 shootingTime = 3000 # milliseconds
 
 state = STATES['WAIT_FOR_USER']
-nextShot = STATES['BACKHAND']
 shootingState = STATES['FEED']
+shootingSequence = DEFAULT_SEQUENCE
+sequencePtr = 0
+nextShot = shootingSequence[sequencePtr]
 
 spin = SPINS['BACKSPIN']
 
@@ -34,7 +36,16 @@ GPIO.setup(PINS['GEAR_PWM'], GPIO.OUT)
 gearMotor = GPIO.PWM(PINS['GEAR_PWM'], PWM_FREQ)
 gearMotor.start(0)
 
-# deal with encoder later
+prevA = True
+prevB = True
+encoderTicks = 0
+thetaMotor = encoderTicks * RADS_PER_TICK
+thetaMotorQ = deque()
+omegaMotorQ = deque()
+prevTime = time.time()
+
+thetaDes = 0
+reachedDes = False
 
 def setupMotorDir():
     GPIO.output(PINS['MB_DIR_A'], GPIO.LOW)
@@ -55,10 +66,27 @@ def printState(stateNum):
         if STATES[s] == stateNum:
             print(s)
 
+def setThetaDes():
+    global thetaDes
+    global reachedDes
+    reachedDes = False
+    if nextShot == STATES['FOREHAND']:
+        thetaDes = THETADES['FOREHAND']
+    else:
+        thetaDes = THETADES['BACKHAND']
+
+def setStateToSweep():
+    global state
+    state = STATES['SWEEP']
+    setThetaDes()
+    printState(state)
+
 def shoot():
     global shootingState
     global state
     global t0
+    global nextShot
+    global sequencePtr
     if shootingState == STATES['FEED']:
         servo.ChangeDutyCycle(DEG180)
         shootingState = STATES['WAIT']
@@ -68,65 +96,17 @@ def shoot():
         if currTime > shootingTime:
             shootingState = STATES['FEED']
             updateSpin()
+            sequencePtr = sequencePtr + 1
+            if sequencePtr >= len(shootingSequence):
+                sequencePtr = 0
+            nextShot = shootingSequence[sequencePtr]
+            printState(nextShot)
             if nextShot != state:
-                state = STATES['SWEEP'] 
-                printState(state)
+                setStateToSweep()
         elif currTime > shootingTime / 2:
             servo.ChangeDutyCycle(DEG0)
     else:
         print('yo shooting state cannot be stateless!')
-
-def setup():
-    inputPins = ['ENCODER_A', 'ENCODER_B']
-    for pin in PINS:
-        if pin not in inputPins and pin not in PWM_PINS:
-            GPIO.setup(PINS[pin], GPIO.OUT)
-        elif pin not in PWM_PINS:
-            GPIO.setup(PINS[pin], GPIO.IN, pull_up_down = GPIO.PUD_UP)
-    servo.start(DEG0)
-    setupMotorDir()
-
-    #temp until implement flask
-    global state
-    state = STATES['SWEEP']
-
-def finiteStateMachine():
-    global state
-    try:
-        while True:
-            if state == STATES['SWEEP']:
-                print('do later')
-
-                # done sweeping, go to feed
-                state = nextShot
-                updateSpin()
-                printState(state)
-            elif state == STATES['FOREHAND'] or state == STATES['BACKHAND']:
-                shoot()
-            elif state != STATES['WAIT_FOR_USER']:
-                print('yo main state cannot be stateless!')
-    except KeyboardInterrupt:
-        print('keyboard exit detected')
-
-
-
-setup()
-#finiteStateMachine()
-
-servo.ChangeDutyCycle(0)
-
-prevA = GPIO.input(PINS['ENCODER_A'])
-prevB = GPIO.input(PINS['ENCODER_B'])
-encoderTicks = 0
-thetaMotor = encoderTicks * RADS_PER_TICK
-prevThetaMotor = 0
-thetaMotorQ = deque()
-omegaMotor = 0
-omegaMotorQ = deque()
-for i in range(LEN_MOVING_AVERAGE):
-    thetaMotorQ.append(thetaMotor)
-    omegaMotorQ.append(omegaMotor)
-prevTime = time.time()
 
 def getQueueAvg(queue):
     return 1.0 * sum(queue) / len(queue)
@@ -136,15 +116,13 @@ def updateMovingQueue(queue, val):
     queue.append(val)
 
 def checkEncoder(encoder):
-    currA = GPIO.input(PINS['ENCODER_A'])
-    currB = GPIO.input(PINS['ENCODER_B'])
     global prevA
     global prevB
     global encoderTicks
     global thetaMotor
-    global prevThetaMotor
     global prevTime
-    global encoder0vel
+    currA = GPIO.input(PINS['ENCODER_A'])
+    currB = GPIO.input(PINS['ENCODER_B'])
     if (encoder=='A' and currA==prevA) or \
             (encoder=='B' and currB==prevB):
         return False
@@ -172,29 +150,83 @@ def checkEncoder(encoder):
            ', omega = ' + str(getQueueAvg(omegaMotorQ)))
     return True
 
-
-thetaDes = 0.5
-thetaMotorDes = thetaDes * THETADES_TO_THETAMOTOR
-print('desired pos = ' + str(thetaMotorDes))
-
-def feedbackControl():
+def feedbackControl(thetaMotorDes):
     voltage = kp * (thetaMotorDes - getQueueAvg(thetaMotorQ)) + \
             kd * getQueueAvg(omegaMotorQ)
     if voltage > MAX_VOLTAGE:
         voltage = MAX_VOLTAGE
     elif voltage < -MAX_VOLTAGE:
         voltage = -MAX_VOLTAGE
+    if voltage > 0:
+        GPIO.output(PINS['GEAR_DIR_A'], COUNTERCLOCKWISE['GEAR_DIR_A'])
+        GPIO.output(PINS['GEAR_DIR_B'], COUNTERCLOCKWISE['GEAR_DIR_B'])
+    else:
+        GPIO.output(PINS['GEAR_DIR_A'], CLOCKWISE['GEAR_DIR_A'])
+        GPIO.output(PINS['GEAR_DIR_B'], CLOCKWISE['GEAR_DIR_B'])
     dutyCycle = 100.0 * abs(voltage) / MAX_VOLTAGE
-    # add more stuff later
+    gearMotor.ChangeDutyCycle(dutyCycle)
+
+def sweep():
+    global t0
+    global reachedDes
+    if not checkEncoder('A'):
+        checkEncoder('B')
+    error = thetaDes * THETADES_TO_THETAMOTOR - getQueueAvg(thetaMotorQ)
+    if abs(error) < 1 and not reachedDes:
+        reachedDes = True
+        t0 = time.time()
+    if (not reachedDes) or (time.time() - t0 < SETTLING_TIME):
+        feedbackControl(thetaDes * THETADES_TO_THETAMOTOR)
+        return False
+    else:
+        gearMotor.ChangeDutyCycle(0)
+        return True
+
+def setup():
+    inputPins = ['ENCODER_A', 'ENCODER_B']
+    for pin in PINS:
+        if pin not in inputPins and pin not in PWM_PINS:
+            GPIO.setup(PINS[pin], GPIO.OUT)
+        elif pin not in PWM_PINS:
+            GPIO.setup(PINS[pin], GPIO.IN, pull_up_down = GPIO.PUD_UP)
+    servo.start(DEG0)
+    setupMotorDir()
+
+    #temp until implement flask
+    setStateToSweep()
+
+    global prevA
+    global prevB
+    prevA = GPIO.input(PINS['ENCODER_A'])
+    prevB = GPIO.input(PINS['ENCODER_B'])
+    
+    #setup moving average queues
+    for i in range(LEN_MOVING_AVERAGE):
+        thetaMotorQ.append(0)
+        omegaMotorQ.append(0)
+
+def finiteStateMachine():
+    global state
+    global sequencePtr
+    global nextShot
+    try:
+        while True:
+            if state == STATES['SWEEP']:
+                if sweep():
+                    # done sweeping, go to shooting
+                    state = nextShot
+                    updateSpin()
+                    printState(state)
+            elif state == STATES['FOREHAND'] or state == STATES['BACKHAND']:
+                shoot()
+            elif state != STATES['WAIT_FOR_USER']:
+                print('yo main state cannot be stateless!')
+    except KeyboardInterrupt:
+        print('keyboard exit detected')
 
 
-try:
-    while True:
-        if not checkEncoder('A'):
-            checkEncoder('B')
 
-except KeyboardInterrupt:
-    print('keyboard exit detected')
-
+setup()
+finiteStateMachine()
 atexit.register(GPIO.cleanup)
 

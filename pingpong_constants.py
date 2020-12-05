@@ -1,3 +1,5 @@
+import RPi.GPIO as GPIO
+
 PINS = {}
 PINS['MB_DIR_A'] = 13
 PINS['MB_DIR_B'] = 11
@@ -23,13 +25,19 @@ STATES['WAIT'] = 3
 STATES['FOREHAND'] = 4
 STATES['BACKHAND'] = 5
 
+DEFAULT_SEQUENCE = [STATES['FOREHAND'], STATES['BACKHAND']]
+
 SPINS = {}
 SPINS['TOPSPIN'] = 0
 SPINS['BACKSPIN'] = 1
 
 # set pwm duty cycle for different spins
-BACKSPIN_PWM = {"top":30, "bottom":50}
-TOPSPIN_PWM = {"top":50, "bottom":30}
+BACKSPIN_PWM = {'top':30, 'bottom':50}
+TOPSPIN_PWM = {'top':50, 'bottom':30}
+
+# set sweep direction
+COUNTERCLOCKWISE = {'GEAR_DIR_A':GPIO.LOW, 'GEAR_DIR_B':GPIO.HIGH}
+CLOCKWISE = {'GEAR_DIR_A':GPIO.HIGH, 'GEAR_DIR_B':GPIO.LOW}
 
 PWM_PINS = ['SERVO', 'MB_PWM', 'MT_PWM', 'GEAR_PWM']
 SERVO_PWM_FREQ = 50  # 50Hz, or 20ms pulse cycle from spec sheet
@@ -52,9 +60,11 @@ d = 0.09    # m
 D = 0.03    # m
 GEAR_RATIO = 100
 THETADES_TO_THETAMOTOR = GEAR_RATIO * d / D
+THETADES = {'FOREHAND':0.5, 'BACKHAND':-0.5}
 MAX_VOLTAGE = 8     # after accounting for loss in L298N driver
 
-# feedback control, found via root locus guess/check
-kp = 100
-kd = 0.04
+# feedback control, found via root locus and guess/check
+kp = 110
+kd = 0.4
+SETTLING_TIME = 0.5     
 
