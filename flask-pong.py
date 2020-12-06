@@ -74,13 +74,20 @@ def doPong():
     pingpong.GPIO.cleanup()
     pingpong.shutdownRPi()
 
-pongThread = threading.Thread(target = doPong)
-pongThread.daemon = True
-pongThread.start()
-
-
-atexit.register(pingpong.GPIO.cleanup)
 
 if __name__ == '__main__':
-    app.run()
+    try:
+        pongThread = threading.Thread(target = doPong)
+        pongThread.daemon = True
+        pongThread.start()
+        atexit.register(pingpong.GPIO.cleanup)
+        app.run(host='0.0.0.0', port=80)
+    except:
+        print('caught error')
+        doPong()
+else:
+    pongThread = threading.Thread(target = doPong)
+    pongThread.daemon = True
+    pongThread.start()
+    atexit.register(pingpong.GPIO.cleanup)
 

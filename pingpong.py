@@ -225,8 +225,8 @@ def checkEncoder(encoder):
     return True
 
 def feedbackControl(thetaMotorDes):
-    voltage = kp * (thetaMotorDes - getQueueAvg(thetaMotorQ)) + \
-            kd * getQueueAvg(omegaMotorQ)
+    voltage = KP * (thetaMotorDes - getQueueAvg(thetaMotorQ)) + \
+            KD * getQueueAvg(omegaMotorQ)
     if voltage > MAX_VOLTAGE:
         voltage = MAX_VOLTAGE
     elif voltage < -MAX_VOLTAGE:
@@ -259,12 +259,14 @@ def sweep():
         return True
 
 def setup():
-    inputPins = ['ENCODER_A', 'ENCODER_B']
+    inputPins = ['ENCODER_A', 'ENCODER_B', 'SHUTDOWN']
     for pin in PINS:
         if pin not in inputPins and pin not in PWM_PINS:
             GPIO.setup(PINS[pin], GPIO.OUT)
         elif pin not in PWM_PINS:
             GPIO.setup(PINS[pin], GPIO.IN, pull_up_down = GPIO.PUD_UP)
+
+    GPIO.output(PINS['LED'], True)
     setupMotorDir()
     setThetaDes()
 
@@ -282,6 +284,7 @@ def finiteStateMachine():
     global state
     global sequencePtr
     global nextShot
+    global terminate
     try:
         while True:
             mutex.acquire()
@@ -304,7 +307,10 @@ def finiteStateMachine():
                 servo.ChangeDutyCycle(0)
                 setStateToSweep()
 
+            
             mutex.acquire()
+            if GPIO.input(PINS['SHUTDOWN']):
+                terminate = True
             stopping = terminate
             mutex.release()
 
@@ -316,7 +322,7 @@ def finiteStateMachine():
         pass
    
 def shutdownRPi():
-    time.sleep(5)
+    time.sleep(3)
     print('shutting down!')
     call('sudo shutdown -h now', shell=True)
 
