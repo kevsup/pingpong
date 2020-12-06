@@ -1,34 +1,86 @@
 import atexit
 import threading
 import time
+from flask import request
+from flask_api import FlaskAPI
+from subprocess import call
 import pingpong
 from pingpong_constants import *
 
-# work in progress. right now just testing multithreading
+app = FlaskAPI(__name__)
 
-def startIt():
-    time.sleep(3)
-    print('starting!')
-    pingpong.setRunning(True)
-    time.sleep(5)
-    print('bh only')
-    pingpong.setShootingSequence([STATES['BACKHAND']])
-    time.sleep(15)
+@app.route('/pingpong/', methods = ['GET'])
+def api_root():
+    return {}
+
+@app.route('/pingpong/toggle/', methods = ['GET', 'POST'])
+def api_toggle():
+    if request.method == 'POST':
+        action = request.data.get('action')
+        if action == 'start':
+            pingpong.setRunning(True)
+        else:
+            pingpong.setRunning(False)
+        return {'running': action == 'start'}
+    return {'running': pingpong.getRunning()}
+
+@app.route('/pingpong/shot/', methods = ['GET', 'POST'])
+def api_shot():
+    if request.method == 'POST':
+        location = request.data.get('location')
+        if location.lower() == 'forehand' or location.lower() == 'fh':
+            pingpong.setShootingSequence([STATES['FOREHAND']])
+        elif location.lower() == 'backhand' or location.lower() == 'bh': 
+            pingpong.setShootingSequence([STATES['BACKHAND']])
+        else:
+            pingpong.setShootingSequence(DEFAULT_SEQUENCE)
+    seq = pingpong.getShootingSequence()
+    seqStr = ''
+    for i in range(len(seq)):
+        if i == 0:
+            seqStr = pingpong.getState(seq[i])
+        else:
+            seqStr = seqStr + ' -> ' + pingpong.getState(seq[i])
+    return {'shot': seqStr}
+
+@app.route('/pingpong/spin/', methods = ['GET', 'POST'])
+def api_spin():
+    if request.method == 'POST':
+        spin = request.data.get('spin')
+        if spin.lower() == 'topspin' or spin.lower() == 't':
+            pingpong.setSpin(SPINS['TOPSPIN'])
+            return {'spin': 'topspin'}
+        else:
+            pingpong.setSpin(SPINS['BACKSPIN'])
+            return {'spin': 'backspin'}
+    return {'spin': pingpong.getSpin()}     
+
+@app.route('/pingpong/time/', methods = ['GET', 'POST'])
+def api_time():
+    if request.method == 'POST':
+        delay = int(request.data.get('delay')) # milliseconds
+        pingpong.setShootingTime(delay)
+        return {'delay': delay}
+    return {'delay': pingpong.getShootingTime()}
+
+@app.route('/pingpong/shutdown/', methods = ['GET'])
+def api_shutdown():
     pingpong.shutdown()
-    time.sleep(1)
+    return {'shutdown': True}
 
 def doPong():
     pingpong.setup()
     pingpong.finiteStateMachine()
+    pingpong.GPIO.cleanup()
+    pingpong.shutdownRPi()
 
 pongThread = threading.Thread(target = doPong)
-saberThread = threading.Thread(target = startIt)
-saberThread.daemon = True
 pongThread.daemon = True
 pongThread.start()
-saberThread.start()
 
-time.sleep(30)
-print('finishing')
 
+atexit.register(pingpong.GPIO.cleanup)
+
+if __name__ == '__main__':
+    app.run()
 

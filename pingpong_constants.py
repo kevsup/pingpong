@@ -18,18 +18,19 @@ DEG0 = 2.5  # 0 degrees servo PWM
 DEG180 = 12.5   # 180 degrees servo PWM
 
 STATES = {}
-STATES['WAIT_FOR_USER'] = 0
-STATES['SWEEP'] = 1
-STATES['FEED'] = 2
-STATES['WAIT'] = 3
-STATES['FOREHAND'] = 4
-STATES['BACKHAND'] = 5
+STATES['SWEEP'] = 0
+STATES['FEED'] = 1
+STATES['WAIT'] = 2
+STATES['FOREHAND'] = 3
+STATES['BACKHAND'] = 4
 
 DEFAULT_SEQUENCE = [STATES['FOREHAND'], STATES['BACKHAND']]
 
 SPINS = {}
 SPINS['TOPSPIN'] = 0
 SPINS['BACKSPIN'] = 1
+
+DEFAULT_SHOOTING_TIME = 3000    # milliseconds
 
 # set pwm duty cycle for different spins
 BACKSPIN_PWM = {'top':10, 'bottom':25}

@@ -2,6 +2,7 @@ import RPi.GPIO as GPIO
 import threading
 import time
 import atexit
+from subprocess import call
 from collections import deque
 from pingpong_constants import *
 
@@ -10,7 +11,7 @@ mutex = threading.Lock()
 
 # shared global variables
 mutex.acquire()
-shootingTime = 3000 # milliseconds
+shootingTime = DEFAULT_SHOOTING_TIME
 shootingSequence = DEFAULT_SEQUENCE
 sequencePtr = 0
 spin = SPINS['BACKSPIN']
@@ -49,6 +50,30 @@ topMotor.start(0)
 GPIO.setup(PINS['GEAR_PWM'], GPIO.OUT)
 gearMotor = GPIO.PWM(PINS['GEAR_PWM'], PWM_FREQ)
 gearMotor.start(0)
+
+def getRunning():
+    mutex.acquire()
+    runStatus = running
+    mutex.release()
+    return runStatus
+
+def getShootingSequence():
+    mutex.acquire()
+    currSequence = shootingSequence
+    mutex.release()
+    return currSequence
+
+def getSpin():
+    mutex.acquire()
+    currSpin = spin
+    mutex.release()
+    return currSpin
+
+def getShootingTime():
+    mutex.acquire()
+    currTime = shootingTime
+    mutex.release()
+    return currTime
 
 def setRunning(newBool):
     global running
@@ -98,6 +123,11 @@ def updateSpin():
         bottomMotor.ChangeDutyCycle(BACKSPIN_PWM['bottom'])
         topMotor.ChangeDutyCycle(BACKSPIN_PWM['top'])
 
+def getState(stateNum):
+    for s in STATES:
+        if STATES[s] == stateNum:
+            return s
+
 def printState(stateNum):
     for s in STATES:
         if STATES[s] == stateNum:
@@ -116,7 +146,6 @@ def setStateToSweep():
     global state
     state = STATES['SWEEP']
     setThetaDes()
-    printState(state)
 
 def shoot():
     global shootingState
@@ -146,7 +175,6 @@ def shoot():
             nextShot = shootingSequence[sequencePtr]
             mutex.release()
 
-            printState(nextShot)
             if nextShot != state:
                 setStateToSweep()
         elif currTime > currShootingTime / 2:
@@ -221,6 +249,8 @@ def sweep():
     if abs(error) < 1 and not reachedDes:
         reachedDes = True
         t0 = time.time()
+        updateSpin()
+        servo.ChangeDutyCycle(DEG0)
     if (not reachedDes) or (time.time() - t0 < SETTLING_TIME):
         feedbackControl(thetaDes * THETADES_TO_THETAMOTOR)
         return False
@@ -235,11 +265,8 @@ def setup():
             GPIO.setup(PINS[pin], GPIO.OUT)
         elif pin not in PWM_PINS:
             GPIO.setup(PINS[pin], GPIO.IN, pull_up_down = GPIO.PUD_UP)
-    servo.start(DEG0)
     setupMotorDir()
-
-    #temp until implement flask
-    setStateToSweep()
+    setThetaDes()
 
     global prevA
     global prevB
@@ -257,7 +284,6 @@ def finiteStateMachine():
     global nextShot
     try:
         while True:
-            
             mutex.acquire()
             run = running
             mutex.release()
@@ -267,12 +293,16 @@ def finiteStateMachine():
                     if sweep():
                         # done sweeping, go to shooting
                         state = nextShot
-                        updateSpin()
-                        printState(state)
                 elif state == STATES['FOREHAND'] or state == STATES['BACKHAND']:
                     shoot()
-                elif state != STATES['WAIT_FOR_USER']:
+                else:
                     print('yo main state cannot be stateless!')
+            else:
+                gearMotor.ChangeDutyCycle(0)
+                bottomMotor.ChangeDutyCycle(0)
+                topMotor.ChangeDutyCycle(0)
+                servo.ChangeDutyCycle(0)
+                setStateToSweep()
 
             mutex.acquire()
             stopping = terminate
@@ -282,7 +312,12 @@ def finiteStateMachine():
                 break
     except KeyboardInterrupt:
         print('keyboard exit detected')
-    
-    GPIO.cleanup()
+    except:
+        pass
+   
+def shutdownRPi():
+    time.sleep(5)
+    print('shutting down!')
+    call('sudo shutdown -h now', shell=True)
 
 
