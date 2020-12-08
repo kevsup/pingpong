@@ -72,7 +72,7 @@ const ActionButtons = () => {
 
   const buttonPress = (newPeriod) => {
     if (newPeriod.localeCompare('') != 0 && !isNaN(newPeriod)) {
-      if (newPeriod > MIN_PERIOD) {
+      if (newPeriod >= MIN_PERIOD) {
     speedPostCall(newPeriod)
       } else {
     Alert.alert('Minimum period is ' + MIN_PERIOD)
