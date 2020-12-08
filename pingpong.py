@@ -67,6 +67,9 @@ def getSpin():
     mutex.acquire()
     currSpin = spin
     mutex.release()
+    for typeOfSpin in SPINS:
+        if currSpin == SPINS[typeOfSpin]:
+            return typeOfSpin
     return currSpin
 
 def getShootingTime():
@@ -320,6 +323,7 @@ def finiteStateMachine():
         print('keyboard exit detected')
     except:
         pass
+    GPIO.cleanup()
    
 def shutdownRPi():
     time.sleep(3)

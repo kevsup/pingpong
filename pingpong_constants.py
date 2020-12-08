@@ -35,8 +35,8 @@ SPINS['BACKSPIN'] = 1
 DEFAULT_SHOOTING_TIME = 3000    # milliseconds
 
 # set pwm duty cycle for different spins
-BACKSPIN_PWM = {'top':10, 'bottom':25}
-TOPSPIN_PWM = {'top':50, 'bottom':30}
+BACKSPIN_PWM = {'top':50, 'bottom':100}
+TOPSPIN_PWM = {'top':100, 'bottom':50}
 
 # set sweep direction
 COUNTERCLOCKWISE = {'GEAR_DIR_A':GPIO.LOW, 'GEAR_DIR_B':GPIO.HIGH}

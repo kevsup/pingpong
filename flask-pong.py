@@ -49,10 +49,8 @@ def api_spin():
         spin = request.data.get('spin')
         if spin.lower() == 'topspin' or spin.lower() == 't':
             pingpong.setSpin(SPINS['TOPSPIN'])
-            return {'spin': 'topspin'}
         else:
             pingpong.setSpin(SPINS['BACKSPIN'])
-            return {'spin': 'backspin'}
     return {'spin': pingpong.getSpin()}     
 
 @app.route('/pingpong/time/', methods = ['GET', 'POST'])
@@ -60,7 +58,6 @@ def api_time():
     if request.method == 'POST':
         delay = int(request.data.get('delay')) # milliseconds
         pingpong.setShootingTime(delay)
-        return {'delay': delay}
     return {'delay': pingpong.getShootingTime()}
 
 @app.route('/pingpong/shutdown/', methods = ['GET'])
@@ -71,23 +68,19 @@ def api_shutdown():
 def doPong():
     pingpong.setup()
     pingpong.finiteStateMachine()
-    pingpong.GPIO.cleanup()
     pingpong.shutdownRPi()
 
-
-if __name__ == '__main__':
-    try:
-        pongThread = threading.Thread(target = doPong)
-        pongThread.daemon = True
-        pongThread.start()
-        atexit.register(pingpong.GPIO.cleanup)
-        app.run(host='0.0.0.0', port=80)
-    except:
-        print('caught error')
-        doPong()
-else:
+def startPongThread():
     pongThread = threading.Thread(target = doPong)
     pongThread.daemon = True
     pongThread.start()
     atexit.register(pingpong.GPIO.cleanup)
 
+if __name__ == '__main__':
+    try:
+        startPongThread()
+        app.run(host='0.0.0.0', port=80)
+    except Exception as e:
+        print(e)
+else:
+    startPongThread()
